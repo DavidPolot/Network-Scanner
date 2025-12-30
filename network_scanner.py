@@ -1,9 +1,12 @@
 import argparse
 import socket
 import sys
+import ipaddress
+
 #copy and paste this command to run the script with desired parameters
-#python network_scanner.py -t 10.4.138.62 -p 1-65535 --threads 200 --timeout 0.1
+#python network_scanner.py -t 192.168.5.219 -p 1-65535 --threads 200 --timeout 0.1
 # use this ip for testing banner retrieval 45.33.32.156
+
 
 def parse_ports(ports_str):
     ports = set()
@@ -18,29 +21,63 @@ def parse_ports(ports_str):
             ports.add(int(part))
     return sorted(p for p in ports if 1 <= p <= 65535)
 
+def chunked(iterable, size):
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i + size]
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def scan_ports_threaded(target, ports, timeout, thread_count):
+def scan_ports_threaded(target, ports, timeout, thread_count, chunk_size=None):
+    """
+    Scan ports with threading, classifying each port as open, closed, or filtered.
+    """
+    if chunk_size is None:
+        chunk_size = max(1, len(ports) // (thread_count * 4))  # dynamic chunk size
+
     open_ports = []
+    closed_ports = []
+    filtered_ports = []
+
+    total = len(ports)
+    completed = 0
+
+    # Helper to split ports into chunks
+    def chunked(iterable, size):
+        for i in range(0, len(iterable), size):
+            yield iterable[i:i + size]
 
     with ThreadPoolExecutor(max_workers=thread_count) as executor:
-        # Submit all port scans to the thread pool
-        future_to_port = {
-            executor.submit(scan_port, target, port, timeout): port
-            for port in ports
-        }
+        for port_chunk in chunked(ports, chunk_size):
+            future_to_port = {
+                executor.submit(scan_port, target, port, timeout): port
+                for port in port_chunk
+            }
 
-        # Collect results as they finish
-        for future in as_completed(future_to_port):
-            port = future_to_port[future]
-            try:
-                is_open = future.result()
-                if is_open:
-                    open_ports.append(port)
-            except Exception:
-                pass
+            for future in as_completed(future_to_port):
+                port = future_to_port[future]
+                completed += 1
 
-    return open_ports
+                # Progress update
+                if completed % 500 == 0 or completed == total:
+                    percent = (completed / total) * 100
+                    print(f"Scanning ports: {completed}/{total} ({percent:.1f}%)", end="\r", flush=True)
+
+                try:
+                    status = future.result()
+                    if status == "open":
+                        open_ports.append(port)
+                    elif status == "closed":
+                        closed_ports.append(port)
+                    elif status == "filtered":
+                        filtered_ports.append(port)
+                except Exception:
+                    # If something unexpected happens, classify as filtered
+                    filtered_ports.append(port)
+
+    print()  # move to next line after completion
+    return open_ports, closed_ports, filtered_ports
+
+
 
 def create_parser():
     parser = argparse.ArgumentParser(description="A simple port scanner.")
@@ -58,18 +95,31 @@ def port_info(target, port):
         ip = "Unknown"
     return ip, port
 
-
+import errno
 def scan_port(target, port, timeout):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    
-    try:
-        result = sock.connect_ex((target, port))
-        sock.close()
-        return result == 0
-    except:
-        sock.close()
-        return False
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+
+        try:
+            result = sock.connect_ex((target, port))
+
+            if result == 0:
+                return "open"
+
+            elif result == errno.ECONNREFUSED:
+                return "closed"
+
+            elif result in (errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH):
+                return "filtered"
+
+            else:
+                return "filtered"
+
+        except socket.timeout:
+            return "filtered"
+
+        except Exception:
+            return "error"
     
 #grab the banner of an open port (If available)
 def grab_banner(target, port, timeout):
@@ -128,9 +178,11 @@ if __name__ == "__main__":
     print(f"Threads: {thread_count}")
 
     try:
-        open_ports = scan_ports_threaded(target, ports, timeout, thread_count)
+        open_ports, closed_ports, filtered_ports = scan_ports_threaded(target, ports, timeout, thread_count)
+        print(f"Open ports ({len(open_ports)}): {open_ports}")
+        print(f"Closed ports: {len(closed_ports)}")
+        print(f"Filtered ports: {len(filtered_ports)}")
         if open_ports:
-            print("Open ports:", open_ports)
             #get hostname from ip
             ip = socket.gethostbyname(target)
             hostname = hostname_from_ip(ip)
