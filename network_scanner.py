@@ -4,7 +4,6 @@ import sys
 import ipaddress
 
 #copy and paste this command to run the script with desired parameters
-#python network_scanner.py -t 192.168.5.219 -p 1-65535 --threads 200 --timeout 0.1
 # use this ip for testing banner retrieval 45.33.32.156
 
 
@@ -142,7 +141,8 @@ def hostname_from_ip(ip):
     except socket.herror:
         return None
 
-
+def is_private_ip(ip):
+    return ipaddress.ip_address(ip).is_private
 
 if __name__ == "__main__":
     # If no args → run a quick local test and exit
@@ -177,17 +177,36 @@ if __name__ == "__main__":
     print(f"Timeout: {timeout} seconds")
     print(f"Threads: {thread_count}")
 
+    ip = socket.gethostbyname(target)
+
+    print(f"Target IP: {ip}")
+
+    if not is_private_ip(ip):
+        hostname = hostname_from_ip(ip)
+        if hostname:
+            print(f"Reverse DNS: {hostname}")
+        else:
+            print("No reverse DNS found")
+    else:
+        print("Private IP detected — skipping reverse DNS")
+
     try:
         open_ports, closed_ports, filtered_ports = scan_ports_threaded(target, ports, timeout, thread_count)
         print(f"Open ports ({len(open_ports)}): {open_ports}")
         print(f"Closed ports: {len(closed_ports)}")
         print(f"Filtered ports: {len(filtered_ports)}")
-        if open_ports:
-            #get hostname from ip
+        try:
             ip = socket.gethostbyname(target)
             hostname = hostname_from_ip(ip)
+
             if hostname:
-                print(f"Hostname for IP {ip}: {hostname}")
+                print(f"Reverse hostname for {ip}: {hostname}")
+            else:
+                print(f"No reverse hostname found for {ip}")
+
+        except socket.gaierror:
+            print("Could not resolve target to IP")
+
             
             # Grab banners for open ports
             for port in open_ports:
