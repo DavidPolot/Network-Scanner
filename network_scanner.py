@@ -50,7 +50,7 @@ def scan_port(target, port, timeout):
 
             if result == 0:
                 return "open"
-            elif result == errno.ECONNREFUSED:
+            elif result in (errno.ECONNREFUSED, 10061):
                 return "closed"
             elif result in (errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH):
                 return "filtered"
