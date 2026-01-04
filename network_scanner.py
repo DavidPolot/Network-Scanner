@@ -6,20 +6,33 @@ import errno
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-
-
 def parse_ports(ports_str):
     ports = set()
     for part in ports_str.split(','):
         part = part.strip()
         if not part:
             continue
-        if '-' in part:
-            start, end = part.split('-', 1)
-            ports.update(range(int(start), int(end) + 1))
-        else:
-            ports.add(int(part))
-    return sorted(p for p in ports if 1 <= p <= 65535)
+
+        try:
+            if '-' in part:
+                start, end = part.split('-', 1)
+                start = int(start)
+                end = int(end)
+                if start > end:
+                    raise ValueError
+                ports.update(range(start, end + 1))
+            else:
+                ports.add(int(part))
+        except ValueError:
+            print(f"Invalid port specification: {part}")
+            sys.exit(1)
+
+    valid_ports = [p for p in ports if 1 <= p <= 65535]
+    if not valid_ports:
+        print("No valid ports to scan.")
+        sys.exit(1)
+
+    return sorted(valid_ports)
 
 
 def chunked(iterable, size):
@@ -27,7 +40,7 @@ def chunked(iterable, size):
         yield iterable[i:i + size]
 
 
-#scanning
+# scanning
 
 def scan_port(target, port, timeout):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -91,11 +104,11 @@ def scan_ports_threaded(target, ports, timeout, thread_count, chunk_size=None):
                 except Exception:
                     filtered_ports.append(port)
 
-    print()  # move cursor to next line
+    print()
     return open_ports, closed_ports, filtered_ports
 
 
-#banner grabbing
+# banner grabbing
 
 def grab_banner(target, port, timeout):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -103,11 +116,11 @@ def grab_banner(target, port, timeout):
     try:
         sock.connect((target, port))
         banner = sock.recv(1024).decode(errors="ignore").strip()
-        sock.close()
         return banner
     except Exception:
-        sock.close()
         return None
+    finally:
+        sock.close()
 
 
 # DNS stuff
@@ -135,7 +148,7 @@ def create_parser():
     return parser
 
 
-# Main
+# MAIN
 
 if __name__ == "__main__":
     parser = create_parser()
@@ -146,8 +159,19 @@ if __name__ == "__main__":
     timeout = args.timeout
     thread_count = args.threads
 
+    # HIGH-IMPACT FIX #1: thread bounds
+    if thread_count < 1 or thread_count > 1000:
+        print("Thread count must be between 1 and 1000")
+        sys.exit(1)
+
     print(f"Target: {target}")
-    ip = socket.gethostbyname(target)
+
+    # HIGH-IMPACT FIX #2: invalid hostname
+    try:
+        ip = socket.gethostbyname(target)
+    except socket.gaierror:
+        print("Invalid target hostname or IP address")
+        sys.exit(1)
 
     if not is_private_ip(ip):
         hostname = hostname_from_ip(ip)
@@ -183,7 +207,6 @@ if __name__ == "__main__":
         print("\nScan cancelled by user.")
     except Exception as e:
         print("Scan failed:", e)
-
 
 
 
