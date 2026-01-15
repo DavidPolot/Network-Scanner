@@ -159,14 +159,13 @@ if __name__ == "__main__":
     timeout = args.timeout
     thread_count = args.threads
 
-    # HIGH-IMPACT FIX #1: thread bounds
     if thread_count < 1 or thread_count > 1000:
         print("Thread count must be between 1 and 1000")
         sys.exit(1)
 
     print(f"Target: {target}")
 
-    # HIGH-IMPACT FIX #2: invalid hostname
+
     try:
         ip = socket.gethostbyname(target)
     except socket.gaierror:
