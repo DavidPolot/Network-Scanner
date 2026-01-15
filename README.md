@@ -1,4 +1,4 @@
-### A multi-threaded network scanner written in Python that detects open, closed and filtered TCP ports using socket connections
+### A Multi-threaded Network Scanner Written in Python That Detects Open, Closed and Filtered TCP Ports Using Socket Connections
 
 ### DISCLAIMER
 This tool is only for educational use and authorized use only
