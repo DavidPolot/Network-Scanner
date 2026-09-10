@@ -147,6 +147,36 @@ def create_parser():
     parser.add_argument("--timeout", type=float, default=1)
     return parser
 
+#give names of sources connected to open ports
+def get_service_name(port):
+    try:
+        service_name = socket.getservbyport(port)
+        return service_name
+    except OSError:
+        return "Unknown Service"
+
+#figure out if a connected port and the name of source is suspicious or not
+def sussy_wussy(port, service_name):
+    suspicious_ports = {
+        21: "FTP",
+        22: "SSH",
+        23: "Telnet",
+        25: "SMTP",
+        53: "DNS",
+        80: "HTTP",
+        110: "POP3",
+        143: "IMAP",
+        443: "HTTPS",
+        445: "SMB",
+        3389: "RDP"
+    }
+
+    if port in suspicious_ports:
+        return f"Suspicious port {port} ({suspicious_ports[port]}) detected."
+    elif service_name == "Unknown Service":
+        return f"Suspicious unknown service on port {port}."
+    else:
+        return f"Port {port} ({service_name}) seems normal."
 
 # MAIN
 
@@ -180,7 +210,8 @@ if __name__ == "__main__":
             print("No reverse DNS found")
     else:
         print("Private IP detected — skipping reverse DNS")
-
+    
+    print("brace for impact twin")
     print(f"Ports: {len(ports)}")
     print(f"Threads: {thread_count}")
     print(f"Timeout: {timeout}s\n")
@@ -206,6 +237,18 @@ if __name__ == "__main__":
         print("\nScan cancelled by user.")
     except Exception as e:
         print("Scan failed:", e)
+
+        #display the name of the source connected to port from the function
+    if open_ports:
+        print("\nOpen ports and their services:")
+        for port in open_ports:
+            service_name = get_service_name(port)
+            print(f"Port {port}: {service_name}")
+        
+        print("\nSuspicious ports and services:")
+        for port in open_ports:
+            service_name = get_service_name(port)
+            print(sussy_wussy(port, service_name))
 
 
 
